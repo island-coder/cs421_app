@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+import logging
 from langchain_community.graphs import Neo4jGraph
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from pinecone import Pinecone, ServerlessSpec
@@ -9,8 +10,12 @@ from langchain.chains.query_constructor.base import AttributeInfo
 from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain_core.prompts.prompt import PromptTemplate
 
+# Configure Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Load credentials
-st.title("Knowledge Graph & Vector Retrieval Demo")
+st.title("MMKG Use Case Demo")
 
 st.write("Loading credentials...")
 openai_api_key = st.secrets["OPENAI_API_KEY"]
@@ -28,13 +33,21 @@ os.environ["NEO4J_URI"] = 'neo4j+s://cbeb0505.databases.neo4j.io'
 os.environ["NEO4J_USERNAME"] = 'neo4j'
 
 # Initialize Neo4j
-st.write("Connecting to Neo4j...")
-graph = Neo4jGraph()
-graph.refresh_schema()
+@st.cache_resource
+def get_neo4j_graph():
+    logger.info("Connecting to Neo4j...")
+    graph = Neo4jGraph()
+    graph.refresh_schema()
+    logger.info("Neo4j connected and schema loaded.")
+    return graph
+
+graph = get_neo4j_graph()
 st.success("Neo4j connected and schema loaded.")
 
 # Initialize Pinecone
-def init_pinecone_index():
+@st.cache_resource
+def get_pinecone_index():
+    logger.info("Initializing Pinecone...")
     pinecone_api_key = os.getenv("PINECONE_API_KEY")
     index_name = "mmkg-doc-index"
     dimension = 1536
@@ -47,13 +60,12 @@ def init_pinecone_index():
             metric="cosine",
             spec=ServerlessSpec(cloud='aws', region='us-east-1')
         )
+    logger.info("Pinecone initialized.")
     return pc.Index(index_name)
 
-st.write("Initializing Pinecone...")
-index = init_pinecone_index()
+index = get_pinecone_index()
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 vectorstore = PineconeVectorStore(index=index, embedding=embeddings)
-st.success("Pinecone initialized.")
 
 # Metadata field info for the SelfQueryRetriever
 metadata_field_info = [
@@ -83,7 +95,7 @@ retriever = SelfQueryRetriever.from_llm(
     document_content_description=document_content_description,
     metadata_field_info=metadata_field_info,
     document_contents="page_content",
-    verbose=True
+    verbose=False
 )
 
 # Cypher Generation Template
@@ -96,9 +108,8 @@ Schema:
 {schema}
 THE FOLLOWING ARE RULES YOU MUST OBEY:
 All entities will be coming from one or more referring articles.
-When asked about the relationship or association between people, try to use all possible person-to-person relationships from the schema to find relationships, do not limit to a few.
-When you need to find the source URL/link for articles, please use the has_source_url relationship.(MATCH (i:article)-[s:has_source_url]->(link)).
-When doing any query related to images use the following relationship to get the image URL.(MATCH (i:image)-[s:has_source_url]->(link))
+IMPORTANT: give article source urls for all possible results using: has_source_url relationship.(MATCH (i:article)-[s:has_source_url]->(link)).
+IMPORTANT: give image urls for all possible results using: (MATCH (i:image)-[s:has_source_url]->(link))
 'depiction' nodes contain 'has_bounding_box' property, this gives the bounding box for the person who is depicted in the image.
 'image' nodes contain 'has_caption' and 'has_generated_caption' properties which give image descriptions.
 If you fail to find an entity the first time, try to search with similar names. Entities will be connected to images using depictions.
@@ -118,11 +129,13 @@ graph_chain = GraphCypherQAChain.from_llm(
     cypher_prompt=cypher_prompt,
     validate_cypher=True,
     allow_dangerous_requests=True,
-    verbose=True
+    verbose=False
 )
 
-# Define RAG without KG
+# Caching for RAG Without KG
+@st.cache_data
 def run_vector_retrieval_only(query):
+    logger.info("Running Vector Retrieval only...")
     retrieved_docs = retriever.get_relevant_documents(query)
     combined_text = "\n".join([doc.page_content for doc in retrieved_docs])
 
@@ -137,10 +150,13 @@ def run_vector_retrieval_only(query):
     Provide the most accurate and comprehensive response.
     """
     response = llm.predict(final_prompt)
+    logger.info("Vector Retrieval complete.")
     return response
 
-# Define RAG with KG
+# Caching for RAG With KG
+@st.cache_data
 def run_with_neo4j(query):
+    logger.info("Running with Neo4j MMKG integration...")
     retrieved_docs = retriever.get_relevant_documents(query)
     combined_text = "\n".join([doc.page_content for doc in retrieved_docs])
     graph_response = graph_chain.invoke({"query": query})
@@ -159,6 +175,7 @@ def run_with_neo4j(query):
     Provide the most accurate and comprehensive response.
     """
     response = llm.predict(final_prompt)
+    logger.info("Neo4j Query complete.")
     return response
 
 # Streamlit Interface
@@ -179,18 +196,31 @@ articles = [
     'https://www.bbc.com/news/articles/ced961egp65o',
 ]
 
+if st.checkbox("About the Knowledge Graph"):
+    st.subheader("Knowledge Graph Information")
+    st.write(
+        """
+        The Multi-Modal Knowledge Graph used for this application was constructed using data extracted from a selection of articles sourced from the BBC. 
+        The articles primarily focus on topics related to **US politics** and **climate change**. By integrating textual, 
+        and visual data, this Knowledge Graph aims to provide a comprehensive and interconnected view 
+        of the relationships, entities, and multimedia associated with these domains.
+        """
+    )
+
+
 query = st.text_input("Enter your query", placeholder="E.g., Images depicting Elon Musk")
 if st.button("Run Query"):
     if not query.strip():
         st.error("Please enter a valid query.")
     else:
+        logger.info(f"Processing query: {query}")
         st.write(f"Running query: {query}")
 
         st.subheader("RAG Without KG (Vector Retrieval Only)")
         rag_only_response = run_vector_retrieval_only(query)
         st.text_area("Response", rag_only_response, height=200)
 
-        st.subheader("RAG With KG (Vector Retrieval + Neo4j)")
+        st.subheader("RAG With KG (Vector Retrieval + MMKG)")
         rag_with_kg_response = run_with_neo4j(query)
         st.text_area("Response", rag_with_kg_response, height=200)
 
