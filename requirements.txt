@@ -1,0 +1,10 @@
+streamlit
+openai==1.55.3
+langchain
+langchain-community
+langchain-openai
+neo4j
+pinecone-client
+tiktoken
+langchain_pinecone
+lark

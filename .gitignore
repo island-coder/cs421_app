@@ -1,0 +1,7 @@
+.streamlit/secrets.toml
+__pycache__/
+cs421_env/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
