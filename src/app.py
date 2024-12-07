@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Load credentials
-st.title("MMKG Use Case Demo")
+st.title("Demo App: Evaluation of Multi-Modal Knowledge Graph based retrieval")
 
 st.write("Loading credentials...")
 openai_api_key = st.secrets["OPENAI_API_KEY"]
@@ -99,23 +99,8 @@ retriever = SelfQueryRetriever.from_llm(
 )
 
 # Cypher Generation Template
-CYPHER_GENERATION_TEMPLATE = """Task: Generate Cypher statement to query a graph database.
-Instructions:
-Use only the provided relationship types and properties in the schema.
-Do not use any other relationship types or properties that are not provided.
-Use graph query results as base and formulate a high-quality response. Double-check for query correctness.
-Schema:
-{schema}
-THE FOLLOWING ARE RULES YOU MUST OBEY:
-All entities will be coming from one or more referring articles.
-IMPORTANT: give article source urls for all possible results using: has_source_url relationship.(MATCH (i:article)-[s:has_source_url]->(link)).
-IMPORTANT: give image urls for all possible results using: (MATCH (i:image)-[s:has_source_url]->(link))
-'depiction' nodes contain 'has_bounding_box' property, this gives the bounding box for the person who is depicted in the image.
-'image' nodes contain 'has_caption' and 'has_generated_caption' properties which give image descriptions.
-If you fail to find an entity the first time, try to search with similar names. Entities will be connected to images using depictions.
-Include multimedia details like image URLs, article sources in your results as much as possible.
-The question is:
-{question}"""
+from cypher_template import CYPHER_GENERATION_TEMPLATE 
+
 
 cypher_prompt = PromptTemplate(
     input_variables=["schema", "question"], template=CYPHER_GENERATION_TEMPLATE
@@ -129,7 +114,7 @@ graph_chain = GraphCypherQAChain.from_llm(
     cypher_prompt=cypher_prompt,
     validate_cypher=True,
     allow_dangerous_requests=True,
-    verbose=False
+    verbose=True
 )
 
 # Caching for RAG Without KG
@@ -200,8 +185,8 @@ if st.checkbox("About the Knowledge Graph"):
     st.subheader("Knowledge Graph Information")
     st.write(
         """
-        The Multi-Modal Knowledge Graph used for this application was constructed using data extracted from a selection of articles sourced from the BBC. 
-        The articles primarily focus on topics related to **US politics** and **climate change**. By integrating textual, 
+        The Multi-Modal Knowledge Graph used for this application was constructed using data extracted from a selection of articles sourced from the offical website of BBC. 
+        The articles primarily focus on topics related to **US politics** and **climate change**. By integrating textual 
         and visual data, this Knowledge Graph aims to provide a comprehensive and interconnected view 
         of the relationships, entities, and multimedia associated with these domains.
         """
@@ -220,7 +205,7 @@ if st.button("Run Query"):
         rag_only_response = run_vector_retrieval_only(query)
         st.text_area("Response", rag_only_response, height=200)
 
-        st.subheader("RAG With KG (Vector Retrieval + MMKG)")
+        st.subheader("MMKG enhanced RAG (Vector Retrieval + MMKG)")
         rag_with_kg_response = run_with_neo4j(query)
         st.text_area("Response", rag_with_kg_response, height=200)
 
