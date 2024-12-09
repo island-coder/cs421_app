@@ -1,6 +1,7 @@
 # app.py
 
 from env_setup import load_credentials
+from help_section import display_help
 load_credentials()
 
 import streamlit as st
@@ -13,8 +14,9 @@ from query_runners import run_vector_retrieval_only, run_with_neo4j,display_resp
 
 load_credentials()
 
-st.title("Demo App: Evaluation of Multi-Modal Knowledge Graph Based Retrieval")
-
+st.title("Demo: Evaluation of Multi-Modal Knowledge Graph Based Retrieval")
+with st.sidebar:
+    display_help()
 # Query Input
 query = st.text_input("Enter your query", placeholder="E.g., Images depicting Elon Musk")
 

@@ -64,6 +64,8 @@ def run_with_neo4j(query, _retriever: SelfQueryRetriever, _graph_chain: GraphCyp
     4. **Integrate Data Sources**:
     - Combine textual data from Pinecone Results with structured data from the Graph Database.
     - Ensure the response is cohesive, integrating insights from all available sources.
+    
+    5. **Avoid repeating duplicate images or image uris , unless it's required**:
 
     ### Data Sources
     **Pinecone Results**:
